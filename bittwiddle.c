@@ -24,13 +24,13 @@ PACKET newPacket(int length) {
 
 void dump_binary(int x)
 {
-    unsigned int z;
-    for (z = 1 << 31; z > 0; z >>= 1)
+    unsigned int z, i;
+    for (z = 1 << 31, i=1; z > 0; z >>= 1, i++)
     {
         putchar(((x & z) == z) ? '1' : '0');
+	if (i%8==0) putchar(' ');
     }
 }
-
 
 void dumpPacket(PACKET p, int length) {
     int i;
