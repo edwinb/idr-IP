@@ -23,7 +23,7 @@ void dumpPacket(PACKET p, int length);
 void setPacketByte(PACKET p, int b, int data);
 void setPacketBits(PACKET p, int start, int end, int data);
 
-void setPacketString(PACKET p, int start, char* string, int l);
+void setPacketString(PACKET p, int start, char* string, int l, char t);
 
 int getPacketByte(PACKET p, int b);
 int getPacketBits(PACKET p, int start, int end);

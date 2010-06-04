@@ -80,8 +80,6 @@ void setPacketByte(PACKET p, int b, int data) {
     p[b] = data;
 }
 
-// 01 00001010 01000001 01000001 100000
-
 void setPacketBits(PACKET p, int start, int end, int data) {
     int startb = start >> 5; // Word the start bits are in
     int endb = end >> 5;     // Word the end bits are in
@@ -103,9 +101,9 @@ void setPacketBits(PACKET p, int start, int end, int data) {
     }
 }
 
-void setPacketString(PACKET p, int start, char* s, int l) {
+void setPacketString(PACKET p, int start, char* s, int l, char t) {
     int i;
-    while(*s!='\0' && (l>0 || l==-1)) {
+    while(*s!=t && (l>0 || l==-1)) {
 	setPacketBits(p, start, start+7, (int)(*s));
 	start+=8;
 	++s;

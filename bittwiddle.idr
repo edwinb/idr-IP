@@ -19,7 +19,8 @@ f_getPacketBits = mkForeign (FFun "getPacketBits"
 			    FInt); [%eval]
 
 f_setPacketString = mkForeign (FFun "setPacketString"
-                         (Cons FPtr (Cons FInt (Cons FStr (Cons FInt Nil))))
+                         (Cons FPtr (Cons FInt (Cons FStr 
+			  (Cons FInt (Cons FInt Nil)))))
 			    FUnit); [%eval]
 
 newPacket : Int -> IO RawPacket;
@@ -46,6 +47,9 @@ data Bounded : Int -> Set where
 
 value : Bounded i -> Int;
 value (BInt v _) = v;
+
+charToBounded : Char -> Bounded 256;
+charToBounded x = BInt (__charToInt x) __Prove_Anything; -- of course it is ;)
 
 data Option : Int -> List Int -> Set where
      Opt : (x:Bounded w) -> (so (validOption (value x) xs)) -> Option w xs;
@@ -76,10 +80,11 @@ setField : RawPacket -> (start:Int) -> (end:Int) ->
 setField pkt start end (BInt v _) = setPacketBits pkt start (end-1) v;
 
 setString : RawPacket -> (start:Int) -> String -> IO ();
-setString (RPkt pkt len) start v = f_setPacketString pkt start v (-1);
+setString (RPkt pkt len) start v = f_setPacketString pkt start v (-1) 0;
 
 setStringn : RawPacket -> (start:Int) -> String -> Int -> IO ();
-setStringn (RPkt pkt len) start v slen = f_setPacketString pkt start v slen;
+setStringn (RPkt pkt len) start v slen 
+    = f_setPacketString pkt start v slen 0;
 
 -- Maybe better as a primitive in C?
 
@@ -105,6 +110,24 @@ getStringn' pkt pos acc O = Just (strRev acc);
 
 getStringn : RawPacket -> Int -> Int -> Maybe String;
 getStringn pkt pos len = getStringn' pkt pos "" (intToNat len);
+
+{-
+getTextString' : RawPacket -> Int -> Int -> String -> Maybe String;
+getTextString' pkt pos prev acc with getField pkt pos (pos+8) (ltAdd 8 oh) {
+   | Just vin = let v = value vin in
+     	      	let end = prev=='\r' && v == '\n')foo in
+		let newstr = strCons (__intToChar v) acc in
+		if end then (Just (strRev newstr)) else
+		   (getTextString' pkt (pos+8) v newstr);
+
+     	        if (v=='\n') then (Just (strRev acc)) else
+     	           (getTextString' pkt (pos+8) v (strCons (__intToChar v) acc));
+   | Nothing = Nothing;
+}
+
+getTextString : RawPacket -> Int -> Maybe String;
+getTextString pkt pos = getTextString' pkt pos 0 "";
+-}
 
 boundFin : Bounded (1 << (natToInt x)) -> Fin (power (S (S O)) (S x));
 	               
