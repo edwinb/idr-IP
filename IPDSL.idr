@@ -154,10 +154,6 @@ include "bittwiddle.idr";
   depIf True t e = t;
   depIf False t e = e;
 
-{-- "PacketLang" is parameterised over the type of the last thing in it.
-    This means we can use do notation to pull out the values which will
-    appear in actual data, and construct predicates on those values. --}
-
 -- Section: The DSL
 
   infixl 5 // ;
