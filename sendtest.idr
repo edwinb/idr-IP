@@ -18,13 +18,19 @@ fromJust Nothing = do { putStrLn "FAIL";
 
 
 main = do { let p = sendData ["Hello world", "Sossidges"];
-       	    let pkt = marshal p;
+       	    let pkt = marshal simplePacket p;
 	    dumpPacket pkt; 
 	    dat <- (fromJust (unmarshal simplePacket pkt));
 	    dumpData dat;
-	    conn <- TCPConnect "localhost" 3456;
+	    putStrLn "Opening connection";
+	    conn <- TCPConnect "127.0.0.1" 8989;
+	    putStrLn "Sending";
 	    send conn pkt;
+	    putStrLn "Getting reply";
 	    echop' <- recv conn;
 	    echop <- getPkt echop';
+	    dat' <- (fromJust (unmarshal simplePacket echop));
+	    dumpPacket echop;
+	    dumpData dat';
 	    closeSocket conn;
 	  };

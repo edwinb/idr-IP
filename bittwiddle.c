@@ -230,12 +230,13 @@ void* net_TCP_socket(char* server, int port) {
 	printf("FAIL 2\n");
 	return NULL;
     }
+    addr.sin_family = AF_INET;
     addr.sin_addr = *(struct in_addr *)hostinfo->h_addr;
     addr.sin_port = htons(port);
 
     if (connect(s, (struct sockaddr *)(&addr),
 		sizeof(struct sockaddr_in)) == -1) {
-	printf("FAIL 3\n");
+	printf("FAIL 3 %s\n", strerror(errno));
 	return NULL;
     }
 

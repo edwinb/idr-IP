@@ -191,25 +191,23 @@ include "bittwiddle.idr";
 
   bitLength : {p:PacketLang} -> mkTy p -> Int;
   
-  bitLength {p=CHUNK c} d = chunkLength c d;
-  bitLength {p=IF True t e} d = bitLength {p=t} d;
-  bitLength {p=IF False t e} d = bitLength {p=e} d;
-{-  bitLength {p=IF x t e} d 
-    = depIfV {P=\x => mkTy' (IF x t e)} x d
-                   (\pt => bitLength {p=IF True t e} d)
-		   (\pe => bitLength {p=IF False t e} d); -}
-  bitLength {p = l // r} d
-    = either d (\l => bitLength l) (\r => bitLength r);
-  bitLength {p = LIST x} Nil = 0;
-  bitLength {p = LIST x} (Cons y ys) 
-      = (bitLength {p=x} y) + (bitLength {p=LIST x} ys);
-  bitLength {p = LISTN _ x} VNil = 0;
-  bitLength {p = LISTN _ x} (y :: ys) 
-      = (bitLength {p=x} y) + (bitLength {p=LISTN _ x} ys);
-  bitLength {p = SEQ v k} d
-    = bitLength (getSigIdx d) + bitLength (getSigVal d);
-  bitLength {p=BIND c k} d 
-    = bitLength {p=c} (getSigIdx d) + bitLength (getSigVal d);
+  bitLength {p=CHUNK c} = \d =>chunkLength c d;
+--  bitLength {p=IF True t e} = \d => bitLength {p=t} d;
+--  bitLength {p=IF False t e} = \d => bitLength {p=e} d;
+  bitLength {p=IF x t e}
+    = depIf {P=\x => mkTy (IF x t e) -> Int} x
+            (\d => bitLength {p=t} d)
+	    (\d => bitLength {p=e} d);
+  bitLength {p = l // r}
+    = \d => either d (\l => bitLength l) (\r => bitLength r);
+  bitLength {p = LIST x}
+      = \d => foldl ( \len, y => (bitLength {p=x} y) + len) 0 d;
+  bitLength {p = LISTN _ x}
+      = \d => vfoldl ( \len, y => (bitLength {p=x} y) + len) 0 d;
+  bitLength {p = SEQ v k}
+    = \d => bitLength (getSigIdx d) + bitLength (getSigVal d);
+  bitLength {p=BIND c k}
+    = \d => bitLength {p=c} (getSigIdx d) + bitLength (getSigVal d);
 
 
 -- IGNORE
@@ -251,8 +249,10 @@ unmarshalChunk end pos pkt = Just II;
 
 unmarshal' : (p:PacketLang) -> Int -> RawPacket -> Maybe (mkTy p);
 unmarshal' (CHUNK c) pos pkt = unmarshalChunk c pos pkt;
-unmarshal' (IF True t e) pos pkt = unmarshal' t pos pkt;
-unmarshal' (IF False t e) pos pkt = unmarshal' e pos pkt;
+unmarshal' (IF x t e) pos pkt = -- unmarshal' t pos pkt;
+   depIf {P = \x => Maybe (mkTy (IF x t e))} x
+         (unmarshal' t pos pkt) (unmarshal' e pos pkt);
+-- unmarshal' (IF False t e) pos pkt = unmarshal' e pos pkt;
 {-
     = depIf {P = \x => Maybe (mkTy' (IF x t e))} x
             (unmarshal' t pos pkt)
@@ -323,45 +323,48 @@ marshalChunk (seq a) (Cons x xs) pos pkt
      	  marshalChunk (seq a) xs pos' pkt; };
 marshalChunk end v pos pkt = return pos;
 
+
 marshal' : {p:PacketLang} -> mkTy p -> Int -> RawPacket -> IO Int;
-marshal' {p=CHUNK c} v pos pkt = marshalChunk c v pos pkt;
-marshal' {p=IF True t e} v pos pkt = marshal' {p=t} v pos pkt;
-marshal' {p=IF False t e} v pos pkt = marshal' {p=e} v pos pkt;
-{-
-marshal' {p=IF x t e} v pos pkt 
-     = depIfV {P=\x => mkTy' (IF x t e)} x v 
-              (\vt => marshal' {p=t} vt pos pkt)
-              (\ve => marshal' {p=e} ve pos pkt);
--}
-marshal' {p = l // r} v pos pkt
-    = either v (\lv => marshal' lv pos pkt) 
+
+marshalList : (p:PacketLang) -> List (mkTy p) -> Int -> RawPacket -> IO Int;
+marshalList p Nil pos pkt = return pos;
+marshalList p (Cons y ys) pos pkt = do { pos' <- marshal' {p} y pos pkt;
+	      	      	       	         marshalList p ys pos' pkt; };
+
+marshalVect : (p:PacketLang) -> (Vect (mkTy p) n) -> Int -> RawPacket -> IO Int;
+marshalVect p VNil pos pkt = return pos;
+marshalVect p (y :: ys) pos pkt = do { pos' <- marshal' {p} y pos pkt;
+	      	           	       marshalVect p ys pos' pkt; };
+
+marshal' : {p:PacketLang} -> mkTy p -> Int -> RawPacket -> IO Int;
+marshal' {p=CHUNK c} = \v, pos, pkt => marshalChunk c v pos pkt;
+-- marshal' {p=IF True t e} = \v, pos, pkt => marshal' {p=t} v pos pkt;
+-- marshal' {p=IF False t e} = \v, pos, pkt => marshal' {p=e} v pos pkt;
+marshal' {p=IF x t e} 
+     = depIf {P=\x => mkTy (IF x t e) -> (Int -> (RawPacket -> IO Int))}
+             x (\v, pos, pkt => marshal' {p=t} v pos pkt)
+               (\v, pos, pkt => marshal' {p=e} v pos pkt);
+marshal' {p = l // r} = \v, pos, pkt =>
+      either v (\lv => marshal' lv pos pkt) 
                (\rv => marshal' rv pos pkt);
-marshal' {p = LIST x} Nil pos pkt
-    = return pos;
-marshal' {p = LIST x} (Cons y ys) pos pkt
-    = do { pos' <- marshal' {p=x} y pos pkt; 
-      	   marshal' {p=LIST x} ys pos' pkt; };
-marshal' {p = LISTN _ x} VNil pos pkt
-    = return pos;
-marshal' {p = LISTN _ x} (y :: ys) pos pkt
-    = do { pos' <- marshal' {p=x} y pos pkt; 
-      	   marshal' {p=LISTN _ x} ys pos' pkt; };
-marshal' {p=SEQ c k} p pos pkt 
-    = do { pos' <- marshal' {p=c} (getSigIdx p) pos pkt;
-      	   marshal' {p=k} (getSigVal p) pos' pkt; 
+marshal' {p = LIST x} = \v, pos, pkt => marshalList x v pos pkt;
+marshal' {p = LISTN n x} = \v, pos, pkt => marshalVect x v pos pkt;
+marshal' {p=SEQ c k} = \pair, pos, pkt => 
+      do { pos' <- marshal' {p=c} (getSigIdx pair) pos pkt;
+      	   marshal' {p=k} (getSigVal pair) pos' pkt; 
          };
-marshal' {p=BIND c k} p pos pkt 
-    = do { pos' <- marshal' {p=c} (getSigIdx p) pos pkt;
-      	   marshal' (getSigVal p) pos' pkt; 
+marshal' {p=BIND c k} = \pair, pos, pkt => 
+      do { pos' <- marshal' {p=c} (getSigIdx pair) pos pkt;
+      	   marshal' (getSigVal pair) pos' pkt; 
          };
 
-marshal : {pf:PacketLang} -> mkTy pf -> RawPacket;
-marshal v = unsafePerformIO
-	    do { pkt <- newPacket (bitLength v);
-	       	 -- putStrLn (showInt (bitLength v));
-	      	 marshal' v 0 pkt; 
-		 return pkt; 
-               };
+marshal : (pf:PacketLang) -> mkTy pf -> RawPacket;
+marshal pf v = unsafePerformIO
+	       do { pkt <- newPacket (bitLength v);
+	            -- putStrLn (showInt (bitLength v));
+	      	    marshal' v 0 pkt; 
+		    return pkt; 
+                  };
 
 {-- A few bits and pieces to help notation... --}
 
@@ -397,6 +400,16 @@ do using (BIND, CHUNK) {
 		 fact (p_bool (value ver == 1));
 		 CHUNK end;
                };
+
+  testIfPkt : PacketLang;
+  testIfPkt = do {
+  	        ver <- bits 2;
+--		IF (value ver == 0) 
+--		   CString
+		   (do { x <- bits 8;
+		       	 LString 55; }); -- (value x); });
+              };
+
 }
 
 rewriteField proof {
@@ -420,3 +433,7 @@ marshalChunk_1 proof {
 	%fill v;
 	%qed;
 };
+
+-- readTestIf = \p => unmarshal testIfPkt p; [%spec]
+-- writeTestIf = \p => marshal testIfPkt p;  [%spec]
+

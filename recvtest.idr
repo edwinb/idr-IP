@@ -25,6 +25,7 @@ recvLoop : Socket -> IO ();
 recvLoop conn = do {
 	 acc <- TCPAccept conn;
 	 fork ( do { d <- recv acc;
+		     putStrLn "Got something...";
               	     processPacket acc d;
 		     putStrLn "Gratuitous testing pause...";
 		     sleep 10;
@@ -42,4 +43,4 @@ runReceiver port = do {
 };
 
 main : IO ();
-main = runReceiver 3456;
+main = runReceiver 8989;
