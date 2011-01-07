@@ -86,7 +86,7 @@ include "bittwiddle.idr";
 {-- "Chunk" gives the types of data which can appear in our packet format.
     "bit" is a number of bits, and "prop" is some arbitrary predicate,
     which in practice would be a predicate on some other data appearing
-    in the packet. "len" tells us how many bits we've got so far.
+    in the packet. "loc" tells us how many bits we've got so far.
 
     'Cstring' is a null-terminated C string. 'Lstring' is a string
     with an explicit length.
@@ -94,14 +94,18 @@ include "bittwiddle.idr";
 
   infixl 5 :+:;
 
+  data Location = Unknown | At Int;
+
+  getLoc : Location -> Int;
+  getLoc (At x) = x;
+  getLoc Unknown = 0; -- Not sure about this...
+
   data Chunk : Set where
       bit : (width: Int) -> (so (width>0)) -> Chunk
     | options : (width: Int) -> (so (width>0)) -> List Int -> Chunk
     | Cstring : Chunk
     | Lstring : Int -> Chunk
     | text : Chunk
-    | NLstring : Chunk
-    | len : Chunk
     | prop : (P:Prop) -> Chunk
     | (:+:) : Chunk -> Chunk -> Chunk
     | seq : Chunk -> Chunk
@@ -117,7 +121,6 @@ include "bittwiddle.idr";
   chunkTy Cstring = String;
   chunkTy (Lstring i) = String; -- maybe a length proof too?
   chunkTy text = String;
-  chunkTy len = Int;
   chunkTy (prop P) = propTy P;
   chunkTy (a :+: b) = (chunkTy a & chunkTy b);
   chunkTy (seq c) = List (chunkTy c);
@@ -131,7 +134,6 @@ include "bittwiddle.idr";
   chunkLength Cstring p = 8 * (strLen p + 1); -- Null terminated
   chunkLength (Lstring i) _ = 8 * i; -- Not null terminated
   chunkLength text p = 8 * (strLen p); -- termination char (CR, LF or CR/LF) in string
-  chunkLength len _ = 0;
   chunkLength (prop p) _ = 0;
   chunkLength (a :+: b) x = chunkLength a (fst x) + chunkLength b (snd x);
   chunkLength (seq c) Nil = 0;
@@ -168,6 +170,7 @@ include "bittwiddle.idr";
 
   data PacketLang : Set where
       CHUNK : (c:Chunk) -> PacketLang
+    | LOCATION : PacketLang -> PacketLang
     | IF : Bool -> PacketLang -> PacketLang -> PacketLang
     | (//) : PacketLang -> PacketLang -> PacketLang
     | LIST : PacketLang -> PacketLang
@@ -180,6 +183,7 @@ include "bittwiddle.idr";
 
   mkTy : PacketLang -> Set;
   mkTy (CHUNK c) = chunkTy c;
+  mkTy (LOCATION t) = Location -> mkTy t;
   mkTy (IF x t e) = if x then (mkTy t) else (mkTy e);
   mkTy (l // r) = Either (mkTy l) (mkTy r);
   mkTy (LIST x) = List (mkTy x);
@@ -187,13 +191,24 @@ include "bittwiddle.idr";
   mkTy (SEQ v k) = (x : mkTy v ** mkTy k);
   mkTy (BIND c k) = (x ** mkTy (k x));
 
+  genMkTy : (Chunk -> Set) -> PacketLang -> Set;
+  genMkTy cTy (CHUNK c) = cTy c;
+  genMkTy cTy (LOCATION t) = Location -> genMkTy cTy t;
+  genMkTy cTy (IF x t e) = if x then (genMkTy cTy t) else (genMkTy cTy e);
+  genMkTy cTy (l // r) = Either (genMkTy cTy l) (genMkTy cTy r);
+  genMkTy cTy (LIST x) = List (genMkTy cTy x);
+  genMkTy cTy (LISTN i x) = Vect (genMkTy cTy x) i;
+  genMkTy cTy (SEQ v k) = (x : genMkTy cTy v ** genMkTy cTy k);
+  genMkTy cTy (BIND c k) = (x ** genMkTy cTy (k x));
+
+
+
 {-- Calculate the number of bits required to store the data in a packet. --}
 
   bitLength : {p:PacketLang} -> mkTy p -> Int;
   
-  bitLength {p=CHUNK c} = \d =>chunkLength c d;
---  bitLength {p=IF True t e} = \d => bitLength {p=t} d;
---  bitLength {p=IF False t e} = \d => bitLength {p=e} d;
+  bitLength {p=CHUNK c} = \d => chunkLength c d;
+  bitLength {p=LOCATION t} = \d : (Location -> mkTy t) => bitLength {p=t} (d Unknown);
   bitLength {p=IF x t e}
     = depIf {P=\x => mkTy (IF x t e) -> Int} x
             (\d => bitLength {p=t} d)
@@ -227,7 +242,6 @@ unmarshalChunk (options w p xs) pos pkt
 unmarshalChunk Cstring pos pkt = getString pkt pos;
 unmarshalChunk (Lstring i) pos pkt = getStringn pkt pos i;
 -- unmarshalChunk text pos pkt = getTextString pkt pos;
-unmarshalChunk len pos pkt = Just pos;
 unmarshalChunk (prop p) pos pkt = testProp p;
 unmarshalChunk (a :+: b) pos pkt 
      with unmarshalChunk a pos pkt {
@@ -249,6 +263,10 @@ unmarshalChunk end pos pkt = Just II;
 
 unmarshal' : (p:PacketLang) -> Int -> RawPacket -> Maybe (mkTy p);
 unmarshal' (CHUNK c) pos pkt = unmarshalChunk c pos pkt;
+unmarshal' (LOCATION t) pos pkt with unmarshal' t pos pkt {
+   | Just t' = Just (\p => t');
+   | Nothing = Nothing;
+}
 unmarshal' (IF x t e) pos pkt = -- unmarshal' t pos pkt;
    depIf {P = \x => Maybe (mkTy (IF x t e))} x
          (unmarshal' t pos pkt) (unmarshal' e pos pkt);
@@ -301,7 +319,8 @@ marshalChunk (bit w p) v pos pkt
 marshalChunk (options w p xs) v pos pkt 
     = marshalChunk (bit w p) (bvalue v) pos pkt;
 marshalChunk Cstring v pos pkt
-   = do { setString pkt pos v;
+   = do { putStrLn ("Marshal " ++ v);
+     	  setString pkt pos v;
      	  return (pos+((1 + strLen v) * 8));
         };
 marshalChunk (Lstring i) v pos pkt
@@ -312,7 +331,6 @@ marshalChunk text v pos pkt
    = do { setStringn pkt pos v (strLen v);
      	  return (pos+((strLen v) * 8));
         };
-marshalChunk len v pos pkt = return pos;
 marshalChunk (prop p) v pos pkt = return pos;
 marshalChunk (a :+: b) v pos pkt 
    = do { pos' <- marshalChunk a (fst v) pos pkt;
@@ -336,8 +354,18 @@ marshalVect p VNil pos pkt = return pos;
 marshalVect p (y :: ys) pos pkt = do { pos' <- marshal' {p} y pos pkt;
 	      	           	       marshalVect p ys pos' pkt; };
 
+{--
+marshalLoc : (x : Location ** mkTy p) -> Int -> RawPacket -> IO Int;
+marshalLoc <| Unknown, x |> pos pkt = marshalLoc <| At pos, x |> pos pkt;
+marshalLoc <| At l, x |> pos pkt =
+      do { pos' <- marshal' {p=LOCATION} (At l) pos pkt;
+      	   marshal' x pos' pkt; 
+         };
+--}
+
 marshal' : {p:PacketLang} -> mkTy p -> Int -> RawPacket -> IO Int;
 marshal' {p=CHUNK c} = \v, pos, pkt => marshalChunk c v pos pkt;
+marshal' {p=LOCATION t} = \v : (Location -> mkTy t), pos, pkt => marshal' {p=t} (v (At pos)) pos pkt;
 -- marshal' {p=IF True t e} = \v, pos, pkt => marshal' {p=t} v pos pkt;
 -- marshal' {p=IF False t e} = \v, pos, pkt => marshal' {p=e} v pos pkt;
 marshal' {p=IF x t e} 
@@ -377,7 +405,6 @@ syntax CString = CHUNK Cstring;
 syntax Text = CHUNK text;
 syntax LString i = CHUNK (Lstring i);
 syntax Options n xs = CHUNK (options n oh xs);
-
 syntax Option x = Opt (BInt x oh) oh;
 
 infixr 5 ## ;

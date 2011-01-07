@@ -27,9 +27,6 @@ recvLoop conn = do {
 	 fork ( do { d <- recv acc;
 		     putStrLn "Got something...";
               	     processPacket acc d;
-		     putStrLn "Gratuitous testing pause...";
-		     sleep 10;
-		     putStrLn "Pause done...";
 	             closeSocket acc;
                    }
               );

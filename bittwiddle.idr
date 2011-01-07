@@ -42,14 +42,29 @@ validOption : Int -> List Int -> Bool;
 validOption x Nil = False;
 validOption x (Cons y ys) = if x==y then True else (validOption x ys);
 
+
+
+
+
+
+
 data Bounded : Int -> Set where
      BInt : (x:Int) -> (so (x<i)) -> Bounded i;
+
+syntax bounded x = BInt x [ tryproof %intro; %decide isThatSo; %qed ];
 
 value : Bounded i -> Int;
 value (BInt v _) = v;
 
+
+
+
+
+
+
+
 charToBounded : Char -> Bounded 256;
-charToBounded x = BInt (__charToInt x) __Prove_Anything; -- of course it is ;)
+charToBounded x = BInt (__charToInt x) (__Prove_Anything _ _ oh); -- of course it is ;)
 
 data Option : Int -> List Int -> Set where
      Opt : (x:Bounded w) -> (so (validOption (value x) xs)) -> Option w xs;
@@ -69,7 +84,7 @@ getField (RPkt pkt len) start end _
    = if ((start<=len) && (end<=len)) then
        (Just 
          (BInt (unsafePerformIO (getPacketBits (RPkt pkt len) start (end-1))) 
-           __Prove_Anything)) -- It's from C, we need to trust it...
+           (unsafeCoerce oh))) -- It's from C, we need to trust it...
        else Nothing;
 
 -- These really need proofs that there is space in the packet rep. It's okay

@@ -1,7 +1,5 @@
 include "packetformat.idr";
 
-syntax Bound x = BInt x oh;
-
 getPkt : Maybe Recv -> IO RawPacket;
 getPkt Nothing = do { 
     putStrLn "No reply!"; 
@@ -17,7 +15,7 @@ fromJust Nothing = do { putStrLn "FAIL";
 	 	      	__Prove_Anything; };
 
 
-main = do { let p = sendData ["Hello world", "Sossidges"];
+main = do { let p = sendData ["Hello", "World!"];
        	    let pkt = marshal simplePacket p;
 	    dumpPacket pkt; 
 	    dat <- (fromJust (unmarshal simplePacket pkt));

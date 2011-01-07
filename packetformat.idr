@@ -20,8 +20,8 @@ do using (BIND, CHUNK) {
   intIP (a, b, c, d) with 
        (choose (a < 256), choose (b < 256), 
         choose (c < 256), choose (d < 256)) {
-      | (Right ap, Right bp, Right cp, Right dp) = 
-           Just (BInt a ap ## BInt b bp ## BInt c cp ## BInt d dp);
+      | (Right _, Right _, Right _, Right _) = 
+           Just (bounded a ## bounded b ## bounded c ## bounded d);
       | _ = Nothing;
   }
 
@@ -61,10 +61,10 @@ do using (BIND, CHUNK) {
 
 convList : List String -> List (mkTy labelStr);
 convList Nil = Nil;
-convList (Cons x xs) with (choose (strLen x < 256), 
-	       	     	   choose (strLen x > 0 && strLen x < 193)) {
+convList (Cons y ys) with (choose (strLen y < 256), 
+	       	     	   choose (strLen y > 0 && strLen y < 193)) {
     | (Right up, Right down) 
-         = Cons (BInt (strLen x) up ## down ## x) (convList xs);
+         = Cons (BInt (strLen y) up ## down ## y) (convList ys);
     | _ = Nil;
 }
 
